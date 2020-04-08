@@ -123,7 +123,201 @@ DWORD Hello(DWORD dwParam1, DWORD dwParam2, DWORD dwParam3)
     printf("dwRetAddr: %08x\n", dwRetAddr);
 }
 ```
-결과를 보면 dwRetAddr는 "if (dwRet)"
+결과를 보면 dwRetAddr는 "if (dwRet)"의 위치를 출력한다는 사실을 알 수 있음.
+Hello()를 호출한 뒤 호출한 쪽의 다음 번지가 바로 return 주소임.
+
+----------------------------------------
+
+## **C문법과 디스어셈블링**
+    키워드 : 함수의 기본 구조, 함수의 호출 규약, 조건문, 반복문, 구조체와 API 호출
+
+### **함수의 기본 구조**
+----------------------------------
+함수의 몸체가 어셈블리 코드로 어떻게 구성되는지 알아보자.
+
+    함수의 기본 구조
+    int sum(int a, int b)
+    {
+        int c = a+b;
+        return c;
+    }
+
+    push ebp
+    mov ebp, esp
+    push ecx
+    mov eax, [ebp+arg_0]
+    add eax, [ebp+arg_4]
+    mov [ebp+var_4], eax
+    mov eax, [ebp+var_4]
+    mov esp, ebp
+    pop ebp
+    retn
+
+먼저 
+
+    push ebp
+    mov ebp, esp
+위 코드에서는 ebp(base pointer)를 push ebp를 통해 지금까지의 베이스 주소를 스택에 보관한다. 그리고 mov ebp, esp를 통해 현재의 스택 포인터인 esp를 ebp로 바꾼다. 즉, **지금까지의 기준이었던 스택 베이스 포인터를 일단 백업해두고, 새로운 포인터를 잡는 것**이다. 함수 안에서 스택을 통해 계속 메모리를 이용할 것이므로, 함수의 시작 번지에서는 항상 이 같은 작업을 진행한다.
+다시 말해 **함수의 시작은 곧 새로운 스택을 사용한다**고 생각할 수 있다. 그래서 스택 베이스 포인터를 보관해 놓고, 현재의 스택 포인터를 베이스로 잡아두며 새 삶을 시작한다.
+
+함수를 종료할 때에는 지금까지 사용한 스택 위치를 다시 원래대로 돌려 놓는다.
+
+    mov esp, ebp
+    pop ebp
+push ebp로 시작해 pop ebp로 끝나면 '함수의 시작과 끝'이라고 생각하면 된다.
+스택을 사용하지 않는 간단함 함수의 경우에는 이 같은 패턴을 밟지는 않지만
+대부분의 함수는 push ebp를 통해 함수의 명줄을 계산한다.
+
+### **함수의 호출 규약**
+---------------------------------------
+어셈블리를 보고 **함수의 역할**을 파악해야 함.
+그러기 위해서는 함수가 어떻게 생겼고, 인자가 몇 개인지 등에 대한 정보를 
+추출해낼 수 있어야 함.
+그러기 위해서는 호출 규약을 알아야 한다.
+
+호출 규약(calling convention)에는
+* __cdecl
+- __stdcall
+- __fastcall
+- __thiscall
+
+네 가지가 있음.
+
+우리는 디스어셈블된 코드를 보고 해당 코드가 어떤 calling convention에 해당하는지 파악하는 것.
+
+간단한 함수를 각 호출 규약별로 정의해서 빌드해보자
+
+#### __cdecl
+    int __cdecl sum(int a, int b)
+    {
+        int c = a+b;
+        return c;
+    }
+
+    int main(int argc, char* argv[])
+    {
+        sum(1,2);
+        return 0;
+    }
+
+    sum:
+        push ebp
+        mov ebp, esp
+        push ecx
+        mov eax, [ebp+arg_0]
+        add eax, [ebp+arg_4]
+        mov [ebp+var_4], eax
+        mov eax, [ebp+var_4]
+        mov esp, ebp
+        pop ebp
+        retn
+
+    main:
+        push 2
+        push 1
+        call calling.00401000
+        add esp, 8
+
+call calling.00401000 이라고 돼 있는 함수를 살펴보자.
+
+항상 call 문의 다음 줄을 살펴서 스택을 정리하는 곳이 있는지 체크해야 함. 이 코드처럼 ```add esp, 8```과 같이 스택을 보정하는 코드가 등장한다면 그것은 __cdecl 방식의 함수라고 생각할 수 있다. 그리고 해당 스택의 크기로 함수 파라미터의 개수까지 확인할 수 있다. 인자는 4바이트씩 계산되므로 스택을 8바이트까지 끌어올린다(스택 주소 값을 8만큼 더한다는 것은 8만큼 끌어올린다는 뜻)는 점에서 파라미터가 2개인 함수라는 점까지 파악할 수 있다.
+
+지금까지 알아낸 정보를 정리해보면
+
+1. __cdecl 방식
+    
+    call calling.00401000 밑에 add esp, 8을 하는 것으로 보아 함수를 호출한 곳에서(즉, 함수 밖에서) 스택을 보정하는 __cdecl방식임.
+2. 파라미터 2개
+
+    add esp,8 그리고 push 문이 2개이므로
+
+3. 리턴 값이 숫자
+
+    함수의 맨 마지막 부분인 eax에 들어가는 값이 숫자라는 것을 보아서 리턴 값은 주소 같은 값이 아닌, 숫자임을 확인
+
+
+#### __stdcall
+
+    int __stdcall sum(int a, int b)
+    {
+        int c = a+b;
+        return c;
+    }
+
+    int main(int argc, char* argv[])
+    {
+        sum(1,2);
+        return 0;
+    }
+
+    sum:
+        push ebp
+        mov ebp, esp
+        push ecx
+        mov eax, [ebp+arg_0]
+        add eax, [ebp+arg_4]
+        mov [ebp+var_4], eax
+        mov eax, [ebp+var_4]
+        mov esp, ebp
+        pop ebp
+        retn 8
+
+    main:
+        push 2
+        push 1
+        call calling.00401000
+위 코드를 보면 main에서 sum 함수를 사용한 뒤에 어떠한 스택 처리도 없는 것을 알 수 있다. 대신 sum()의 본체 후반부에 retn 8을 한 것을 볼 수 있음. 즉, 이 경우에는 함수 안에서 스택을 처리한 것임.
+
+이런식으로 __stdcall 방식은 **함수 안에서 스택을 처리함** 그래서 8바이트의 스택 보정과 파라미터가 2개라는 판단은 함수 내부에서 확인해야함.대표적으로 Win32 API는 __stdcall 방식을 이용함.
+
+만약 retn이 보이고 (retn 10 같은 별도의 숫자가 보이지 않는 상태) call 후에 add esp, x도 보이지 않는다면 이 함수는 __stdcall 방식이자 파라미터가 없는 경우라고 볼 수 있음.
+
+
+#### __fastcall
+    int __fastcall sum(int a, int b)
+    {
+        int c = a+b;
+        return c;
+    }
+
+    int main(int argc, char* argv[])
+    {
+        sum(1,2);
+        return 0;
+    }
+
+    sum:
+        push ebp
+        mov ebp, esp
+        sub esp, 0Ch
+        mov [ebp+var_C], edx
+        mov [ebp+var_8], ecx
+        mov eax, [ebp+var_8]
+        add eax, [ebp+var_C]
+        mov [ebp+var_4], eax
+        mov eax, [ebp+var_4]
+        mov esp, ebp
+        pop ebp
+        retn 
+
+    main:
+        push ebp
+        mov ebp, esp
+        mov edx, 2
+        mov ecx, 1
+        call sub_401000
+        xor eax, eax
+        pop ebp
+        retn
+
+sub esp, 0Ch로 스택 공간을 확보하고 edx 레지스터를 사용함.
+__fastcall은 함수의 파라미터가 2개 이하일 경우, 인자를 push로 넣지 않고 ecx, edx 레지스터를 이용함. 메모리를 이용하는 것보다
+레지스터를 이용하는 것이 속도가 훨씬 빠르기 때문.
+따라서 __fstcall는 인자가 2개 이하이면서 빈번히 사용되는 함수에 쓰이는 편.
+그러므로 함수 호출 전에 edx, ecx 레지스터에 값을 넣는 것이 보이면 __fastcall 규약의 함수라고 생각할 수 있음.
+
+
+
 
 ## Reference
 리버스 엔지니어링 바이블
