@@ -644,6 +644,11 @@ C 코드부터 간단히 해석해 보면 STARTUPINFO와 PROCESS_INFORMATION 구
 STARTUPINFO 구조체의 첫 번째 멤버변수는 DWORD cb 임. 따라서 이 코드는 si.cb = sizeof(si)가 됨.
 
 
+#### 참고 사항
+    MOV EAX, DWORD PTR DS:[405030] : DATA 영역(DS)의 405030 주소의 4바이트 공간의 값을 EAX에 저장.
+    MOV DWROD PTR SS:[EBP-8], EAX : EAX값을 SS:[EBP-8]에 저장.
+        DWORD PTR SS:[EBP-8]의 의미 - STACK 영역의 EBP-8 주소의 4바이트 공간의 값
+
 
 
 
