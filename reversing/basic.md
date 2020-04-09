@@ -316,6 +316,335 @@ __fastcall은 함수의 파라미터가 2개 이하일 경우, 인자를 push로
 따라서 __fstcall는 인자가 2개 이하이면서 빈번히 사용되는 함수에 쓰이는 편.
 그러므로 함수 호출 전에 edx, ecx 레지스터에 값을 넣는 것이 보이면 __fastcall 규약의 함수라고 생각할 수 있음.
 
+#### __thiscall
+
+    Class CTemp
+    {
+        public:
+        int MemberFunc(int a, int b);
+    };
+    
+    mov eax, dword ptr [ebp-14h]
+    push eax
+    mov edx, dword ptr [ebp-10h]
+    push edx
+    lea ecx, [ebp-4]
+    call 402000
+__thiscall은 주로 C++의 클래스에서 이용되는 방법. 특징으로는 현재 객체의 포인터를 ecx에 전달한다는 것.(```lea ecx, [ebp-4] ```) C++에서는 현재 자신이 어떤 객체를 이용하고 있는지 구분해주는 값으로 this 포인터를 사용함. ecx로 전달되는 값이 this 포인터인 것. 해당 클래스에서 사용하고 있는 멤버 변수나 각종 값은 ecx 포인터에 오프셋 몇 번지를 더하는 식으로 사용할 수 있음.
+    ecx+x
+    ecx+y
+    ecx+z
+
+### 조건문
+------------------------------
+
+
+#### if문
+------------------------------
+간단한 조건문을 디스어셈블링해보자.
+
+    int Temp(int a)
+    {
+        int b = 1;
+        if (a == 1)
+        {
+            a++;
+        }
+        else
+        {
+            b++;
+        }
+        return b;
+    }
+    
+    int main(int argc , char* argv[])
+    {
+        Temp(l);
+    }
+
+    .text:00401000      push    ebp
+    .text:00401001      mov     ebp, esp
+    .text:00401003      push    ecx
+    .text:00401004      mov     dword ptr [ebp-4] , 1
+    .text:0040100B      cmp     dword ptr [ebp+8] , 1
+    .text:0040100F      Jnz     short loc 40101C
+    .text:00401011      mov     eax, [ebp+8 ]
+    .text:00401014      add     eax, 1
+    .text:00401017      mov     [ebp+8] , eax
+    .text:0040101A      Jmp     short loc 401025
+    .text :0040101C loc 40101C:
+    .text :0040101C     mov     ecx, [ebp-4]
+    .text :0040101F     add     ecx, 1
+    . text: 00401022    mov     [ebp-4], ecx
+    .text :00401025
+    .text:00401025 loc 401025
+    .text :00401025     mov     eax, [ebp-4]
+    .text:00401028      mov     esp, ebp
+    .text :0040102A     pop     ebp
+    .text:0040102B      retn
+    
+
+```
+    push ebp
+    mov ebp, esp
+```
+함수의 머리
+
+```
+    push ecx
+```
+ecx를 스택에 보관함. c 소스에서 볼 수 있듯 현재 지역변수는 int b로 1개뿐임. 이처럼 변수의 숫자가 적은 경우에는 굳이 스택에 보관할 필요 없이 레지스터만 이용해 연산을 처리함. 이 b라는 변수를 앞으로 ecx 레지스터에서 사용하기 위해 push 문으로 기존 값을 일단 보관함. 보통 함수의 초반부에 레지스터를 push 문으로 스택에 넣는 코드가 등장한다면 앞으로 이 레지스터를 이 함수에서 연산 목적으로 사용할 것이기 때문이라고 생각하면 됨.
+
+``` mov dword ptr [ebp-4], 1 ```
+스택에 직접 값을 넣는 코드이다. [ebp-4]도 앞으로 ecx와 더불어 연산으로 사용될 b 변수에 해당하는 값.즉, **int b = 1;** 초기화 코드에 해당하는 부분.
+
+```
+    cmp dword ptr [ebp+8], 1
+    jnz short loc_40101C
+    mov eax, [ebp+8]
+    add eax, 1
+```
+위 코드가 바로 직접적인 **if(a==1)**에 해당하는 코드.[ebp+8]은 첫번째 파라미터를 가리킴. ([ebp+4]는 return 주소, 첫번째 파라미터는 [ebp+8], 두번째 파라미터는 [ebp+C] 등으로 늘어나기 때문) 따라서 [ebp+8]은 Temp(1)로 넣어준 첫 번째 인자라는 사실을 알 수 있음. 이와 같은 식으로 그 값이 1인지 비교(**cmp**)한다. 그래서 그 결과가 0이면 바로 아랫줄로 가서 eax에 [ebp+8]을 넣고, 인자였던 a에 1을 더한다. [ebp+8]에 바로 1을 더하지 않고 eax에 넣고 add를 한 이유는 *메모리에서는 바로 연산이 되지 않기 때문에 레지스터를 이용*한 것
+
+```
+    mov eax, [ebp-4]
+    mov esp, ebp
+    pop ebp
+    retn
+```
+그리고 0x401025 번지로 가서 eax에 b 변수의 값을 넣어주고(**mov eax, [ebp-4]**) 리턴해서 함수를 끝냄. eax에는 함수의 리턴값이 들어가기 때문에 void 형이 아닌 함수의 후반부에는 항상 eax 값을 설정하는 코드(**mov eax, [ebp-4]**)가 등장한다. 그리고 **cmp dword ptr [ebp+8], 1**로 다시 돌아가서 결과가 non zero라면(즉, else라면) b 변수에 1을 더한 후 끝냄.
+
+조건문은 jnz, jz 등을 처리하기 위한 코드가 대부분이며, 변수의 처리를 위해 레지스터를 사용한다는 사실을 알 수 있음. 
+
+### 반복문
+------------------------------
+루프문은 for, while, goto 등이 있지만 컴퓨터 입장에서는 결국 counter register를 이용한 반복 행위일 뿐임. 
+
+    int loop(int c)
+    {
+        int d;
+        for (int i=0; i<=0x100;i++)
+        {
+            c--;
+            d++;
+        }
+        return c+d;
+    }
+
+    text:00401000 push ebp
+    .text:00401001 mov ebp , esp
+    .text:00401003 sub esp, 8
+    .text:00401006 mov dword ptr [ebp-8] , 0
+    .text:0040100D Jmp short loc 401018
+    .text:0040100F mov eax, [ebp-8]
+    .text:00401012 add eax, 1
+    .text:00401015 mov [ebp- 8], eax
+    .text:00401018 cmp dword ptr [ebp-8] , 100h
+    .text:0040101F Jg short loc 401035
+    .text:00401021 mov ecx, [ebp+8]
+    .text:00401024 sub ecx, 1
+    .text:00401027 mov [ebp+8 ], ecx
+    .text :0040102A mov edx, [ebp-4]
+    .text:0040102D add edx, 1
+    .text:00401030 mov [ebp-4J, edx
+    .text:00401033 Jmp short loc 40100F
+    .text:00401035 mov eax, [ebp+8]
+    .text:00401038 add eax, [ebp-4]
+    .text:0040103B mov esp , ebp
+    .text :0040103D pop ebp
+    .text:0040103E retn 
+
+인자를 하나 받고 0x100번 만큼 해당 인자에서 1씩 뺀 후, 별도 변수에 0x100번 만큼 1씩 더하는 간단한 코드.기본 코드는 이미 앞에서 모두 살펴봤으니 여기서는 for문의 핵심 코드만 살펴보자.
+
+    .text:0040100F    mov eax, [ebp-8]
+    .text:00401012    add eax, 1
+    .text:00401015    mov [ebp-8] , eax
+
+0x40100F 번지가 for문에서 i++에 해당하는 부분. 현재 지역변수 d에 해당하는 코드는 [ebp-8]에 위치해 있고, 그것을 eax 레지스터를 이용해 1을 더하고, 그 값을 다시 지역변수인 [ebp-8]에 넣음.
+
+    .text:00401018 cmp dword ptr [ebp-8] , 100h
+    .text:0040101F Jg short loc 401035
+0x401018 번지가 반복문의 시작. 방금 설명한 대로 dword ptr [dbp-8]이 int i로 선언한 지역변수. 이 값이 0x100인지 비교해서 0x100보다 크면 0x401035 번지로 점프.
+
+    .text:00401035 mov eax, [ebp+8]
+    .text:00401038 add eax, [ebp-4]
+    .text:0040103B mov esp , ebp
+    .text :0040103D pop ebp
+    .text:0040103E retn 
+0x401035 번지는 return c+d에 해당하는 코드. 메모리끼리 바로 연산을 수행할 수 없으므로 각각 c에 해당하는 [ebp+8]을 eax에 넣고, 그 eax(변수 c)와 d 변수에 해당하는 [ebp-4]를 더함. 그리고  eax에 결과값이 들어 있는 상태에서 리턴.
+
+
+    .text:00401021 mov ecx, [ebp+8]
+    .text:00401024 sub ecx, 1
+    .text:00401027 mov [ebp+8 ], ecx
+    ...
+    .text:00401030 mov [ebp-4J, edx
+    .text:00401033 Jmp short loc 40100F
+
+만약 jg short short loc_401035 조건에 부합하지 않는다면(즉,0x100이 되지 않는다면) 바로 아래로 내려가 for 문 안의 코드를 수행할 것. 이때 0x401033번지에서 보이는 것처럼 다시 위 코드로 올라가는 경우, 그리고 그 위치에 해당하는 코드가 적당한 값을 더하거나 빼면서 어떤 특정한 값과 cmp한다면 이 디스어셈블한 코드는 반복문으로 봐도 무관. 대부분의 for문에는 이러한 패턴과 규칙이 있으므로 확실히 기억해두자.
+
+
+### **구조체와 API Call**
+-------------------------------
+스택포인터만 보고 구조체의 크기가 얼마이고 이 API의 인자로는 어떤 것이 들어가는지 파악하는 것이 필수임.
+다음 예제 코드는 STARTUPINFO와 PROCESS_INFORMATION 구조체를 이용해 CreateProcess()로 새 프로세스를 생성하는 코드.
+
+    void RunProcess()
+    {
+        STARTUPINFO si;
+        PROCESS_INFORMATION pi;
+
+        ZeroMemory( &si, sizeof(si) );
+        si.cb = sizeof(si);
+        ZeroMemory( &pi, sizeof(pi) );
+
+        // Start the child process.
+        if( !CreateProcess( NULL , 
+            "MyChildProces " ,
+            NULL,
+            NULL’
+            FALSE ,
+            0,
+            NULL,
+            NULL ,
+            &si,
+            &pi )
+            )
+        {
+            printf("CreatProcess failed.\n");
+            return;
+        } 
+        
+        // Wait until child process exits.
+        WaitForSingle Object( pi.hProcess, INFINITE );
+        
+        // Close process and thread handles.
+        CloseHandle( pi.hProcess );
+        CloseHandle( pi.hThread );
+    }
+
+C 코드부터 간단히 해석해 보면 STARTUPINFO와 PROCESS_INFORMATION 구조체를 선언한 뒤 CreateProcess()를 호출함.그러면 두 구조체에는 생성된 새 프로세스와 관련된 값이 들어오며, 해당 구조체의 멤버변수인 프로세스 핸들을 이용해 프로세스가 종료될 때까지 WaitForSingleObject()로 대기함. 그리고 프로세스가 종료되면 관련 핸들을 닫아 주는 것이 전부. 다음은 위 코드를 디스어셈블한 코드
+
+    Ox401000 PUSH EBP
+    Ox401001 MOV EBP , ESP
+    Ox401003 SUB ESP,54
+    Ox401006 PUSH 44
+    Ox401008 PUSH 0
+    Ox40100A LEA EAX DWORD PTR SS:[EBP-54)
+    Ox40100D PUSH EAX
+    Ox40100E CALL calling.004011AO
+    Ox401013 ADD ESP ,OC
+    Ox401016 MOV DWORD PTR SS:[EBP-54] ,44
+    Ox40101D PUSH 10
+    Ox40101F PUSH 0
+    Ox401021 LEA ECX DWORD PTR SS:[EBP-10)
+    Ox401024 PUSH ECX
+    Ox401025 CALL calling .004011AO
+    Ox40102A ADD ESP,OC
+    Ox40102D LEA EDX DWORD PTR SS:[EBP-10)
+    Ox401030 PUSH EDX
+    Ox401031 LEA EAX DWORD PTR SS:[EBP-54)
+    Ox401034 PUSH EAX
+    Ox401035 PUSH 0
+    Ox401037 PUSH 0
+    Ox401039 PUSH 0
+    Ox40103B PUSH 0
+    Ox40103D PUSH 0
+    Ox40103F PUSH 0
+    Ox401041 PUSH calling.00407030
+    Ox401046 PUSH 0
+    Ox401048 CALL DWORD PTR DS:CreateProcessA
+    Ox40104E TEST EAX ,EAX
+    Ox401050 JNZ SHORT calling.00401061
+    Ox401052 PUSH calling.00407040
+    Ox401057 CALL calling.0040116F
+    Ox40105C ADD ESP,4
+    Ox40105F JMP SHORT calling.00401081
+    Ox401061 PUSH -1
+    Ox401063 MOV ECX 싸ORD PTR SS:[EBP-10)
+    Ox401066 PUSH ECX
+    Ox401067 CALL ORD PTR DS: aitForSingleObject
+    Ox40106D MOV EDX 써ORD PTR SS: [EBP -10)
+    Ox401070 PUSH EDX
+    Ox401071 CALL ORD PTR DS:CloseHandle
+    Ox401077 MOV EAX ORD PTR SS:[EBP-C)
+    Ox40107A PUSH EAX
+    Ox40107B CALL ORD PTR DS:CloseHandle
+    Ox401081 MOV E5P,EBP
+    Ox401083 POP EBP
+    Ox401084 RETN 
+
+#### 함수의 시작
+    
+    Ox401000 PUSH EBP
+    Ox401001 MOV EBP , ESP
+
+#### 스택 확보
+    Ox401003 SUB ESP,54
+지금까지 살펴본 코드에서는 변수가 많지 않았기 때문에 레지스터로 충분히 충당할 수 있었지만 지금은 구조체가 등장한 상황. 따라서 스택을 늘려서 공간을 확보해야 함.그럼 0x54 바이트만큼 스택을 늘린 이유는?
+
+우리가 사용한 두 구조체(si, pi)의 레이아웃을 보자.
+
+    typedef struct _STARTUPINFOA { //프로세스가 생성될 때 이 구조체를 차몾하여 프로세스의 속성들을 설정해 줄 수 있음.
+    DWORD  cb; //구조체 변수의 크기
+    LPSTR  lpReserved;
+    LPSTR  lpDesktop;
+    LPSTR  lpTitle; // 콘솔 윈도우의 타이틀 바 제목
+    DWORD  dwX; //프로세스 윈도우의 x좌표
+    DWORD  dwY; //y 좌표
+    DWORD  dwXSize; //프로세스 윈도우의 가로 길이
+    DWORD  dwYSize; //세로길이
+    DWORD  dwXCountChars;
+    DWORD  dwYCountChars;
+    DWORD  dwFillAttribute;
+    DWORD  dwFlags; //설정된 멤버 정보
+    WORD   wShowWindow;
+    WORD   cbReserved2;
+    LPBYTE lpReserved2;
+    HANDLE hStdInput;
+    HANDLE hStdOutput;
+    HANDLE hStdError;
+    } STARTUPINFOA, *LPSTARTUPINFOA;
+
+    typedef struct _PROCESS_INFORMATION { // 새로 생성된 프로세스와 기본 스레드에 대한 정보가 들어있음.
+    HANDLE hProcess;
+    HANDLE hThread;
+    DWORD  dwProcessId;
+    DWORD  dwThreadId;
+    } PROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+
+멤버 변수의 개수를 세어서 데이터 타입의 바이트 크기대로 계산해보면 STARTUPINFO 구조체의 크기는 0x44바이트이고 PROCESS_INFORMATION은 0x10 바이트임. 두 값을 더하면 0x54라는 숫자. 
+    Ox401006 PUSH 44
+    Ox401008 PUSH 0
+    Ox40100A LEA EAX DWORD PTR SS:[EBP-54]
+    Ox40100D PUSH EAX
+    Ox40100E CALL calling.004011AO
+
+    Ox401025 CALL calling .004011AO
+    Ox40102A ADD ESP,OC
+
+    ZeroMemory(&si, sizeof(si));
+
+이 코드가 바로 ZeroMemory()에 해당하는 코드. STARTUPINFO 구조체의 크기는 0x44바이트 였음. 0x40100A에서는 STARTUPINFO 구조체인 [EBP-54]의 포인터를 eax에 넣고 ZeroMemory()의 인자로 전달. 그런데 push 문이 3개인 것으로 보아 파라미터는 3개라고 분석되는데 ZeroMemory()의 인자는 2개 뿐임. 이유는 ? ZeroMemory()가 매크로 함수라서 바이너리로 변환된 실제 프로토타입과 다르기 때문. 즉, 다음 코드와 같이 인자가 3개인 memset()으로 전처리된 구문이며, 궁극적으로는 memset()을 이용하게 됨. 
+
+    ZeroMemory 전처리문
+    #define RtlZeroMemory(Destination, Length) memset((Destination),O, (Length))
+    #define ZeroMemory RtlZeroMemory
+
+ 따라서 바이너리에서는 memset의 인자 개수대로 변환된 것.
+
+ 0x44바이트만큼을 0으로 바꾸는 것으로 봐서 그만한 크기로 데이터를 초기화하는 것은 구조체라는 예상을 할 수 있다. 다음으로 등장하는 ``` CALL calling.004011A0```함수 호출은 memset()에 해당하는 함수. 함수를 호출한 후 ADD ESP, 0C로 스택을 보정하는 것으로 봐서 memset()함수는 __cdecl 규약의 함수라고 생각할 수 있음. memset()의 인자가 3개이므로 4*3 = 12로, 0xC 바이트만큼 스택을 정리해줌.
+
+#### 구조체의 첫 번째 멤버 변수 처리
+
+    0x401016 MOV DWORD PTR SS:[EBP-54],44
+
+이번에는 MOV 명령어가 등장. 본격적으로 어떤 값을 넣는다고 생각할 수 있음. [EBP-54]는 이미 특정 구조체의 선두 번지라는 분석을 마친 상태. 그곳에 4바이트만큼 0x44 라는 값을 넣고 있으니, 이는 구조체의 첫 번째 멤버변수에 0x44를 넣으라는 것으로 판독할 수 있음.
+
+STARTUPINFO 구조체의 첫 번째 멤버변수는 DWORD cb 임. 따라서 이 코드는 si.cb = sizeof(si)가 됨.
+
+
+
 
 
 
