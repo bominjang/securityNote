@@ -104,11 +104,67 @@ Binary Patching(바이너리 패치)
             // -i : 대/소문자 무시
             // -n : 검색 결과 출력 라인 앞에 라인 번호 출력
             // -E : 패턴을 확장 정규 표현식으로 해석
-        ``` 
-        데이터 베이스 확인
 
-        3) keyChain 내 저장 여부 확인
-        Apple devices는 비밀번호 관리 기능으로 키체인을 사용한다.
-        키체인은 dump를 이용하여 획득이 가능하며, 해당 정보는 웹 사이트 로그인 정보, 신용카드 정보, 무선 네트워크 정보 및 모바일 앱 설정에 따라서 앱 계정 정보가 저장 가능.
+            find -name *sql* | grep -i 'coredata'
+        ``` 
+    데이터 베이스 확인
+
+    사용자 정보가 저장되는 Data Container 경로가 ```/private/var/mobile/Containers/Data/Application/ ```임을 확인.
 
         
+
+    3) keyChain 내 저장 여부 확인
+    Apple devices는 비밀번호 관리 기능으로 키체인을 사용한다.
+    키체인은 dump를 이용하여 획득이 가능하며, 해당 정보는 웹 사이트 로그인 정보, 신용카드 정보, 무선 네트워크 정보 및 모바일 앱 설정에 따라서 앱 계정 정보가 저장 가능.
+
+    - keychain 덤프 프로그램을 다운로드하고 설치
+        wget https://github.com/ptoomey3/Keychain-Dumper/archive/master.zip
+    
+        unzip master.zip
+
+        cd Keychain-Dumper-master/
+
+        ./keychain_dumper > keychain.txt
+
+    4) NSUserDefaults 내 저장 여부 확인
+        NSUserDefaults을 사용하여 저장하는 모든 정보는 암호화되지 않은 형태로 저장됨. 따라서 개발자가 해당 함수를 이용하여 중요 정보를 저장하면 중요 정보가 유출될 수 있으며, .plist 파일 타입으로 아래 경로에 저장됨.
+
+        ```Library>preferences>$AppBundleld.plist ```
+        
+        1. iFunbox에서 앱 애플리케이션에 대한 내부를 확인 (종이가 쌓여진 아이콘을 클릭하여, DVIA 앱 애플리케이션의 홈 디렉터리로 이동함.)
+        경로 :```cd /var/mobile/Containers/Data/Application/ ```하고 ```find ./ -name "*앱이름*" 2>/dev/null```해서 패키지 찾은 다음에 ```cd /var/mobile/Containers/Data/Application/패키지값/Library/Preferences ```에서 plist 찾고 밖으로 빼서 ** iBackup Viewer**로 봄
+
+    5) Plist 내 저장 여부 확인
+    앱 애플리케이션에 입력한 정보는 앱 샌드박스 디렉토리 내 plist 확장자를 가진 파일에 저장됨.
+    Documents 폴더의 userinfo.plist파일을 확인해보면, 앱에 입력한 정보 (ID/PW)가 평문으로 저장되어있는지 아닌지를 알 수 있음.
+
+
+
+    -> ** 대응방안 **
+        중요정보가 모바일 기기에 평문으로 저장될 경우 해당 저장 기능에 112비트 이상의 보안 강도를 갖는 안전한 암호화 기능을 적용함
+        SQLite 데이터베이스를 사용할 경우 SQLCipher 모듈을 이용하여 암호화 해야 함
+        외부 원격 서버를 두어 안전하게 저장하는 것도 하나의 방법일 수 있음
+    
+3. Side channel Data Leakage(사이드 채널 데이터 유출)
+Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은 응용프로그램에서 사용되는 민감한 데이터가 의도치 않게 유출되는 것을 의미
+
+다음과 같이 3개 항목을 대상으로 진단을 수행함.
+- Device Logs : Device Logs를 통한 데이터 유출
+- App Screenshot : 스크린샷 파일을 통한 데이터 유출
+- Pasteboard : 클립보드 내 데이터 유출
+
+    1. Device Logs  
+    스마트폰 Device에서 생성하는 Log를 통해 앱에 입력한 정보가 로그를 통해 의도치않게 유출되는지 여부를 확인.
+    iTools의 콘솔 로그 아이콘을 통해 Device의 모든 Log를 확인할 수 있지만, iOS 9버전까지만 지원된다. 따라서 해당 항목은 VMware에 MAC OS를 설치하여, iOS 9버전 대의 iPhone을 Xcode 시뮬레이터에 생성하여 진행한다.
+
+    2. App Screenshot
+    개발자가 화면 정보 저장을 위해 스크린샷 파일을 앱 내부에 저장하는 경우 발생하는 취약점으로 중요 정보가 노출될 수 있음.
+
+    
+    중요정보를 입력 후 , 앱을 비활성화(홈버튼눌러서) 시킨 뒤, ``` Data Container of App\Library\Cashes\Snapshots\``` 하위 경로에 생성되는 캡처 파일을 확인
+
+    Filza를 이용해 확인해보면, 입력 정보가 그대로 노출되었음을 확인할 수 있음.
+
+    3. Pasteboard
+    클립보드 내에 주요한 데이터를 남길 수 있는 취약점으로, 잘못된 Input Box 등을 사용함으로써 발생됨.
+    
