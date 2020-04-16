@@ -296,15 +296,162 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
     탈옥 여부를 탐지하고 있는 지, 또는 탈옥 탐지를 우회할 수 있도록 설계되어 있는지 확인이 필요함. 탈옥 또는 루팅된 디바이스에서 애플리케이션이 정상 구동될 경우, 실행 흐름 조작 또는 정보 유출 등의 피해가 발생할 수 있으므로 탐지/차단하는 로직이 필요.
     탈옥 탐지 우회를 위해 앱 애플리케이션이 어떠한 클래스 또는 메소드를 통해 탈옥 탐지를 수행하고 있는지 먼저 확인 후, 해당 메소드에 대한 결과값을 변경하는 과정으로 진행.
 
-    1) DVIA 애플리케이션의 바이너리 파일의 경로를 확인
-    
-    ```ps -ef | grep -i "damn" | grep -v "grep"```명령어를 통해 바이너리 파일의 실행 경로를 확인.
+    1) 프로세스 정보 확인
+    ``` frida-ps -U```
+    2) 프로세스에 Frdia attach
+    ``` frida -U process-name ```
+    attach해서 Frida shell을 통한 interaction을 해도 되고, js코드를 작성해서 attach해도 됨.
 
-    2) 위에서 확인한 바이너리 파일의 경로를 이용하여 클래스 덤프를 수행.
-    Cydia 에서 Class dump를 설치하여 사용함.
-    (** Class dump는 64bit를 지원하지 않으므로, 사용하고 있는 운영체제의 비트 수 확인 후 정확하게 설치해야 함)
+    3) Class&Method 덤프 뜨기
+    덤프를 뜨는 목적은 어떤 ViewContoler와 function이 디바이스가 탈옥기기임을 판단하는 지 알아내는 것임.
 
-    
+    모든 클래스들과 메소드들을 덤프 뜨기 위한 간단한 스크립트를 작성해보자.
+    우리는 Jailbreak와 관련된 모든 것들을 찾고, Jailbreak Bypass를 할 것.
+    우리가 진행하고자 하는 프로세스: IDENTIFY CLASS > IDENTIFY METHODS > FIND RETURN VALUE > MODIFY RETURN VALUE
+
+    **3-1)  Finding Classes for Jailbreak Detection with Frida in DVIA**
+    ```
+    [classes.js]
+        for (var classNAme in ObjC.classes){
+            if(objC.classes.hasOwnProperty(className))
+            {
+                console.log(className);
+            }
+        } 
+    //모든 객체는 hasOwnProperty를 상속하는 Object의 자식임. 이 메소드는 인자로 전달받은 프로퍼티의 존재 여부를 테스트하기 위해 사용함.
+    ex) o.hasOwnProperty('prop') : o객체가 prop라는 명칭을 지닌 프로퍼티를 포함하는 지를 판단
+    ```
+    위 코드를 통해 모든 클래스를 출력하도록 하고, 여기서
+    ```
+        frida -U -l classes.js DVIA | grep -i Jailbreak
+    ```
+    를 하면 Jailbreak 검증에 관여하는 클래스를 찾을 수 있음.
+    이제 타겟 클래스를 찾았으니, 메서드를 알아낼 차례
+
+    **3-2) Finding Methods for Jailbreak Detection with Frida in DVIA**
+    method를 알아내기 위해서는 ```ObjC.classes.class-name.$methods```를 쓰면 됨.
+    지금의 경우 **JailbreakDetectionVC**가 타겟 클래스!
+
+    ```
+    [mehodsofclass.js]
+    console.log("[*] Started : Find All Methods of a Specific Class");
+
+    if(ObjC.available){
+        try{
+            var className = "JailbreakDetectionVC";
+            var methods = eval('ObjC.classes.' + className + '.$methods');
+            //eval : 문자열을 코드로 인식하게 하는 함수
+
+            for(var i=0;i<methods.length;i++){
+                try{console.log("[-] "+methods[i]);}
+                catch(err){console.log("[!] Exception1: "+ err.message);}
+                }
+            }
+            catch(err){
+                console.log("[!] Exception2: "+err.message);
+            }
+        }
+    else{console.log("Objective-C Runtime is not available!");}
+
+    console.log("[*] Completed: Find All Methods of a Specific Class");
+    ```
+    위 스크립트는 타겟클래스 안의 method를 모두 출력하는 내용이다.
+    스크립트를 실행시킨 후, 함수이름을 추정하여 타겟 메서드를 찾는다.
+    linux 환경에서는 ```frida -U -l methodsofclass.js DVIA | grep -i 'jailbreak\|jailbroken' ```을 검색하면 바로 필터링 할 수 있다.
+    여기서는 **isJailbroken**이 가장 유력한 메서드일 것 같다.
+
+    **3-3)Modifying return values of Methods for Jailbreak Detection with Frida in DVIA**
+    그러면, **isJailbroken**메서드가 어떤 리턴값을 보내는 지 알아보자.
+
+    ```
+    if(ObjC.available){
+        try{
+            var classname = "JailbreakDetectionVC";
+            var funcName = "- isJailbroken";
+            var hook = eval('ObjC.classes.'+classname+'["'+funcName+'"]');
+            //method나타낼 때, class명[method명]으로 나타냄
+            Interceptor.attach(hook.implementation,{
+                onLeave: function(retval){
+                console.log("[*] Class Name: "+classname);
+                console.log("[*] Method Name: "+ funcName);
+                console.log("\t[-] Type of return value: "+typeof retval);
+                console.log("\t[-] Return Value: "+retval);
+            }
+            });
+        }
+        catch(err){ console.log("[!] Exception2: "+err.message);
+        }
+    }
+
+    else{
+        console.log("Objective-C Runtime is not available!");
+    }
+
+    ```
+
+    여기서 잠시 callback함수를 되짚고 넘어가자
+    ```
+    1. 비동기 처리
+    자바스크립트의 비동기처리란 특정 코드가 종료되지 않은 상태라 하더라도 대기하지 않고 다음 코드를 실행하는 자바스크립트의 특성(병렬적 실행)을 의미
+    - 자바스크립트에서 비동기처리가 필요한 이유?
+    화면에서 서버로 데이터를 요청했을 때 서버가 언제 그 요청에 대한 응답을 할지도 모르는 상태에서 계속 기다리고 있을 수는 없기 때문에 다른 코드를 먼저 실행하는 비동기 처리가 필요함.
+    2. 콜백함수(Callback Function)
+    어떤 이벤트가 발생한 후, 수행될 함수를 의미
+    콜백 함수의 동작 방식은 이롱의 식당 자리 예약과 같음. 식당에 자리가 없을 경우, 대기자 명단에 이름을 쓴 다음에 자리가 날 때까지 주벼 식당을 돌아다님. 만약 식당에서 자리가 생기면 전화로 자리가 났다고 연락옴. 그 전화를 받는 시점은 콜백 함수가 호출되는 시점과 같다고 볼 수 있음. 즉, 데이터가 준비된 시점에서만 사용자가 원하는 동작을 수행할 수 있음.
+    ```
+
+    ``` frida -U -l returnvalues.js DVIA```를 통해 위 스크립트를 실행한 후, iOS 디바이스에서 JailbreakTest1를 클릭하면 콘솔에서 return value를 확인할 수 있음.
+    우리 디바이스(탈옥)에는 return value가 0x1이므로 이 값은 True라고 볼 수 있음.
+    우리가 할 일은 return value를 0x0으로 overwite하는 것임. 
+    ```
+        newretval = ptr("0x0");
+        retval.replace(newretval);
+        console.log("\t[-] New Return Value: "+ newretval);
+    ```
+    위 코드를 삽입하여 retval를 수정하고 console에 표시하도록 할 수 있음.
+
+    완전한 코드는
+    ```
+    if(ObjC.available){
+        try{
+            var classname = "JailbreakDetectionVC";
+            var funcName = "- isJailbroken";
+            var hook = eval('ObjC.classes.'+classname+'["'+funcName+'"]');
+            //method나타낼 때, class명[method명]으로 나타냄
+            Interceptor.attach(hook.implementation,{
+                onLeave: function(retval){
+                console.log("[*] Class Name: "+classname);
+                console.log("[*] Method Name: "+ funcName);
+                console.log("\t[-] Type of return value: "+typeof retval);
+                console.log("\t[-] Return Value: "+retval);
+                var newretval = ptr("0x0");
+                retval.replace(newretval);
+                console.log("\t[-] New Return Value : "+newretval);
+            }
+            });
+        }
+        catch(err){ console.log("[!] Exception2: "+err.message);
+        }
+    }
+
+    else{
+        console.log("Objective-C Runtime is not available!");
+    }
+    ```
+    위 스크립트를 실행하고 버튼을 누르면 다음과 같은 결과가 나온다.
+    ```
+        [iOS Device::DVIA]-> [*] Class Name: JailbreakDetectionVC
+        [*] Method Name: - isJailbroken
+            [-] Type of return value: object
+            [-] Return Value: 0x1
+            [-] New Return Value : 0x0
+    ```
+
+
+
+## References
+https://blog.attify.com/bypass-jailbreak-detection-frida-ios-applications/
+
 
 
 
