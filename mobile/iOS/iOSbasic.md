@@ -310,6 +310,7 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
     우리가 진행하고자 하는 프로세스: IDENTIFY CLASS > IDENTIFY METHODS > FIND RETURN VALUE > MODIFY RETURN VALUE
 
     **3-1)  Finding Classes for Jailbreak Detection with Frida in DVIA**
+    
     ```
     [classes.js]
         for (var classNAme in ObjC.classes){
@@ -329,6 +330,7 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
     이제 타겟 클래스를 찾았으니, 메서드를 알아낼 차례
 
     **3-2) Finding Methods for Jailbreak Detection with Frida in DVIA**
+    
     method를 알아내기 위해서는 ```ObjC.classes.class-name.$methods```를 쓰면 됨.
     지금의 경우 **JailbreakDetectionVC**가 타겟 클래스!
 
@@ -361,6 +363,7 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
     여기서는 **isJailbroken**이 가장 유력한 메서드일 것 같다.
 
     **3-3)Modifying return values of Methods for Jailbreak Detection with Frida in DVIA**
+    
     그러면, **isJailbroken**메서드가 어떤 리턴값을 보내는 지 알아보자.
 
     ```
