@@ -447,6 +447,9 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
             [-] New Return Value : 0x0
     ```
 
+8. Runtime Manipulation
+Runtime Manipulation은 모바일 애플리케이션이 실행 중에 GDB, frida 등을 이용하여 동적으로 기능을 변경하는 방법.
+GDB나 frida는 이전
 
 
 ## References
