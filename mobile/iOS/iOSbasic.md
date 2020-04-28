@@ -454,6 +454,38 @@ Side channel data leakage(주변 채널에 의한 데이터 유출) 취약점은
 Runtime Manipulation은 모바일 애플리케이션이 실행 중에 GDB, frida 등을 이용하여 동적으로 기능을 변경하는 방법.
 GDB나 frida는 이전
 
+9. 애플리케이션 무결성 검증
+
+cydia에서 **IPA Installer Console**을 다운받고 
+```  ipainstaller -l ``` 명령어를 통해 추출 가능한 앱 리스트를 봄.
+그리고 ```ipainstaller -b 앱패키지``` 명령어를 통해 application을 ipa로 추출. 그리고 ``` cd /private/var/mobile/Documents```로 가서 확인하면 해당 파일이 있음을 알 수 있음.
+```mv *.ipa 앱이름.ipa ```를 통해 애플리케이션 이름을 바꾸어주고, ``` mv 앱이름.ipa /var/mobile/Media/ ```를 통해 해당 디렉토리로 ipa파일을 옮김.
+이렇게 ipa를 뽑고, 변조하려면 IDA로 해당 패키지 이름 파일을 찾아서 열어줌. 그리고 변조한 후에 ```Edit PatchProgram ```해서 뽑아냄.
+
+그리고 뽑아낸 파일을 ```3uTools ```의 Files의 최상위 디렉토리(**/var/mobile/Media**)에 넣는다.
+
+ssh 터미널에서 해당 애플리케이션 디렉토리(**/private/var/mobile/containers/Bundle/Application/앱패키지명/앱이름.app**)으로 이동하여, 
+```mv /var/mobile/Media/바이너리 ./ ```으로 해서 해당 디렉토리로 바이너리를 옮김.
+
+그리고 소유 권한을 바꿔주기 위해서 일단 소유권을 봐야 함.
+```ls -aln``` 을 통해 권한을 확인하고
+
+chown 33:33 
+chmod 755 등과 같이 권한을 변경해줌
+
+그리고 다시 이 파일을 뽑아내기 위해
+```  ipainstaller -l ``` 명령어를 통해 추출 가능한 앱 리스트를 보고,
+
+```ipainstaller -b 앱패키지```를 통해 ipa로 추출함.
+
+그리고 ``` cd /private/var/mobile/Documents```로 이동해서 뽑힌걸 보고
+```mv *.ipa 앱이름.ipa ```를 통해 애플리케이션 이름을 바꾸어주고, ``` mv 앱이름.ipa /var/mobile/Media/ ```를 통해 해당 디렉토리로 ipa파일을 옮김.
+
+
+끝으로 기존 ipa 와 crack된 ipa의 해시값을 비교하고,
+기존 앱을 디바이스에서 삭제한 후 crack된 ipa가 정상적으로 실행되는 지 확인함!
+
+
 
 ## References
 https://blog.attify.com/bypass-jailbreak-detection-frida-ios-applications/
